@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- REGLAS TEMPORALES PARA DESARROLLO ---
+    // ¡CAMBIA ESTO ANTES DE PRODUCCIÓN!
+    
+    // 📝 Colección USERS: Permisiva durante desarrollo
+    match /users/{userId} {
+      allow read, write: if true;  // Cualquiera puede hacer cualquier cosa
+    }
+    
+    // 📰 Colección ARTICLES: Permisiva durante desarrollo  
+    match /articles/{articleId} {
+      allow read, write: if true;  // Cualquiera puede hacer cualquier cosa
+    }
+  }
+}
