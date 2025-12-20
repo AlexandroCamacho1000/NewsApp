@@ -1,8 +1,19 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // ✅ NUEVO IMPORT
+import 'package:intl/intl.dart';
 import '../../domain/entities/article.dart';
+
+// ⭐⭐ LOGGING PROFESIONAL PARA DEBUG
+import 'dart:developer';
+
+void _logImageDebug(String title, String? url, String event) {
+  debugPrint('🖼️ [IMAGE_DEBUG] $event');
+  debugPrint('   📍 Artículo: $title');
+  debugPrint('   🔗 URL: ${url ?? "null"}');
+  debugPrint('   📅 Timestamp: ${DateTime.now().toIso8601String()}');
+  debugPrint('   ---');
+}
 
 class ArticleWidget extends StatelessWidget {
   final ArticleEntity? article;
@@ -38,8 +49,16 @@ class ArticleWidget extends StatelessWidget {
     );
   }
 
+  // ⭐⭐ FUNCIÓN COMPLETAMENTE CORREGIDA CON LOGGING
   Widget _buildImage(BuildContext context) {
-    if (article?.urlToImage == null || article!.urlToImage!.isEmpty) {
+    final articleTitle = article?.title ?? 'Sin título';
+    final imageUrl = article?.urlToImage;
+    
+    // ✅ Logging profesional
+    _logImageDebug(articleTitle, imageUrl, 'Iniciando carga');
+    
+    if (imageUrl == null || imageUrl.isEmpty) {
+      _logImageDebug(articleTitle, imageUrl, 'URL vacía - Mostrando placeholder');
       return Padding(
         padding: const EdgeInsetsDirectional.only(end: 14),
         child: ClipRRect(
@@ -56,53 +75,98 @@ class ArticleWidget extends StatelessWidget {
       );
     }
 
+    _logImageDebug(articleTitle, imageUrl, 'Configurando CachedNetworkImage');
+    
     return CachedNetworkImage(
-      imageUrl: article!.urlToImage!,
-      imageBuilder: (context, imageProvider) => Padding(
-        padding: const EdgeInsetsDirectional.only(end: 14),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.0),
-          child: Container(
-            width: MediaQuery.of(context).size.width / 3,
-            height: double.maxFinite,
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.08),
-              image: DecorationImage(
-                image: imageProvider, 
-                fit: BoxFit.cover
+      imageUrl: imageUrl,
+      imageBuilder: (context, imageProvider) {
+        _logImageDebug(articleTitle, imageUrl, '✅ Imagen cargada exitosamente');
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(end: 14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20.0),
+            child: Container(
+              width: MediaQuery.of(context).size.width / 3,
+              height: double.maxFinite,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.08),
+                image: DecorationImage(
+                  image: imageProvider, 
+                  fit: BoxFit.cover
+                ),
               ),
             ),
           ),
-        ),
-      ),
-      progressIndicatorBuilder: (context, url, downloadProgress) => Padding(
-        padding: const EdgeInsetsDirectional.only(end: 14),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.0),
-          child: Container(
-            width: MediaQuery.of(context).size.width / 3,
-            height: double.maxFinite,
-            child: CupertinoActivityIndicator(),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.08),
+        );
+      },
+      progressIndicatorBuilder: (context, url, downloadProgress) {
+        final progress = downloadProgress.progress ?? 0;
+        _logImageDebug(articleTitle, url, '⏳ Cargando... ${(progress * 100).toStringAsFixed(0)}%');
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(end: 14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20.0),
+            child: Container(
+              width: MediaQuery.of(context).size.width / 3,
+              height: double.maxFinite,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CupertinoActivityIndicator(),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${(progress * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.08),
+              ),
             ),
           ),
-        ),
-      ),
-      errorWidget: (context, url, error) => Padding(
-        padding: const EdgeInsetsDirectional.only(end: 14),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.0),
-          child: Container(
-            width: MediaQuery.of(context).size.width / 3,
-            height: double.maxFinite,
-            child: Icon(Icons.error, color: Colors.red),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
+        );
+      },
+      errorWidget: (context, url, error) {
+        _logImageDebug(articleTitle, url, '❌ ERROR - ${error.toString()}');
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(end: 14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20.0),
+            child: Container(
+              width: MediaQuery.of(context).size.width / 3,
+              height: double.maxFinite,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error, color: Colors.red, size: 30),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Error',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
+      // ⭐⭐ CONFIGURACIONES PROFESIONALES
+      fadeInDuration: const Duration(milliseconds: 300),
+      fadeOutDuration: const Duration(milliseconds: 300),
+      maxHeightDiskCache: 500,
+      maxWidthDiskCache: 500,
+      memCacheHeight: 500,
+      memCacheWidth: 500,
+      useOldImageOnUrlChange: true,
     );
   }
 
@@ -174,7 +238,7 @@ class ArticleWidget extends StatelessWidget {
                   Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
                   const SizedBox(width: 4),
                   Text(
-                    _formatDateBeautifully(article!.publishedAt), // ← NUEVO MÉTODO
+                    _formatDateBeautifully(article!.publishedAt),
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey[600],
@@ -222,16 +286,15 @@ class ArticleWidget extends StatelessWidget {
       
       // Si es este año
       if (date.year == now.year) {
-        return DateFormat('d MMM', 'es_ES').format(date); // Ej: "25 Dic"
+        return DateFormat('d MMM', 'es_ES').format(date);
       }
       
       // Formato completo
-      return DateFormat('d MMM yyyy', 'es_ES').format(date); // Ej: "25 Dic 2023"
+      return DateFormat('d MMM yyyy', 'es_ES').format(date);
       
     } catch (e) {
-      // Si falla el parseo, intenta mostrar algo
       if (dateString != null && dateString.length >= 10) {
-        return dateString.substring(0, 10); // "2023-12-25"
+        return dateString.substring(0, 10);
       }
       return 'Fecha';
     }

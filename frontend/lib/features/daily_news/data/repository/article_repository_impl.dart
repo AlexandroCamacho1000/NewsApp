@@ -11,6 +11,12 @@ class ArticleRepositoryImpl implements ArticleRepository {
   final FirebaseFirestore firestore;
   final FirebaseStorage storage;
 
+  // ⭐ URLs constantes para imágenes por defecto (sin parámetros)
+  static const _catImageUrl = 'https://images.unsplash.com/photo-1514888286974-6d03bde4ba42';
+  static const _christmasImageUrl = 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09';
+  static const _dogImageUrl = 'https://images.unsplash.com/photo-1552053831-71594a27632d';
+  static const _defaultImageUrl = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c';
+
   ArticleRepositoryImpl({
     required this.firestore,
     FirebaseStorage? storage,
@@ -24,14 +30,33 @@ class ArticleRepositoryImpl implements ArticleRepository {
       final snapshot = await firestore.collection('articles').get();
       print('📚 ${snapshot.docs.length} artículos encontrados');
       
+      // ⭐ DEBUG CRÍTICO: Mostrar todos los documentos
+      print('📋 LISTA COMPLETA DE DOCUMENTOS:');
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('   • ID: ${doc.id}');
+        print('     Título: ${data['title'] ?? "Sin título"}');
+        print('     thumbnailURL: ${data['thumbnailURL'] ?? "Vacío"}');
+        print('     ---');
+      }
+      
       final articles = <ArticleEntity>[];
       
       for (final doc in snapshot.docs) {
         try {
           final article = await _createArticleWithAuthor(doc);
           articles.add(article);
+          print('   ✅ Artículo "${article.title}" agregado a la lista');
         } catch (e) {
           print('⚠️ Error procesando artículo ${doc.id}: $e');
+          // ⭐ INTENTA CREAR ARTÍCULO CON IMAGEN POR DEFECTO
+          try {
+            final fallbackArticle = await _createFallbackArticle(doc);
+            articles.add(fallbackArticle);
+            print('   🔄 Artículo creado con imagen por defecto');
+          } catch (e2) {
+            print('❌ No se pudo crear artículo de respaldo: $e2');
+          }
         }
       }
       
@@ -46,6 +71,47 @@ class ArticleRepositoryImpl implements ArticleRepository {
         type: DioExceptionType.connectionError,
       ));
     }
+  }
+
+  // ⭐ NUEVA FUNCIÓN: Crear artículo con imagen por defecto
+  Future<ArticleEntity> _createFallbackArticle(DocumentSnapshot doc) async {
+    final data = doc.data() as Map<String, dynamic>;
+    final title = data['title']?.toString()?.trim() ?? 'Sin título';
+    
+    print('\n🔄 Creando artículo de respaldo: "$title"');
+    
+    // Obtener NOMBRE DEL AUTOR
+    String authorName = 'Anónimo';
+    final authorId = data['authorId']?.toString();
+    
+    if (authorId != null && authorId.isNotEmpty) {
+      try {
+        print('   🔍 Buscando autor ID: $authorId');
+        final userDoc = await firestore
+            .collection('users')
+            .doc(authorId)
+            .get();
+        
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          authorName = userData['name']?.toString()?.trim() ?? 'Anónimo';
+          print('   ✅ Autor encontrado: $authorName');
+        }
+      } catch (e) {
+        print('   ❌ Error obteniendo autor: $e');
+      }
+    }
+    
+    return ArticleEntity(
+      id: doc.id.hashCode,
+      author: authorName,
+      title: title,
+      description: data['excerpt']?.toString()?.trim() ?? '',
+      url: '',
+      urlToImage: _getFallbackImage(title), // ⭐ Siempre imagen por defecto
+      publishedAt: _getPublishedAt(data),
+      content: data['content']?.toString()?.trim() ?? '',
+    );
   }
 
   @override
@@ -110,23 +176,44 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
+  // ⭐ FUNCIÓN CORREGIDA: Ahora maneja URLs normales también
   Future<ArticleEntity> _createArticleWithAuthor(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final title = data['title']?.toString()?.trim() ?? 'Sin título';
     
-    print('\n📰 Procesando: "$title"');
-    
-    // 1. Obtener imagen
-    final gsUrl = data['thumbnailURL']?.toString()?.trim() ?? 
-                  data[' thumbnailURL']?.toString()?.trim() ?? '';
+    print('\n📰 Procesando: "$title" (ID: ${doc.id})');
     
     String imageUrl = '';
+    final gsUrl = data['thumbnailURL']?.toString()?.trim() ?? '';
+    
+    // ⭐ LÓGICA MEJORADA: Maneja tanto URLs de Firebase como URLs normales
     if (gsUrl.isNotEmpty) {
-      imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
+      if (gsUrl.startsWith('gs://')) {
+        // Es URL de Firebase Storage
+        try {
+          print('   🔗 Procesando Firebase Storage URL...');
+          imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
+          print('   ✅ URL Firebase obtenida');
+        } catch (e) {
+          print('   ⚠️ Error con Firebase Storage, usando fallback: $e');
+          imageUrl = _getFallbackImage(title);
+        }
+      } else if (gsUrl.startsWith('http')) {
+        // Es URL normal (picsum.photos, unsplash, etc.)
+        print('   🌐 Usando URL normal: ${gsUrl.substring(0, min(50, gsUrl.length))}...');
+        imageUrl = gsUrl;
+      } else {
+        // URL inválida o formato desconocido
+        print('   ⚠️ URL con formato desconocido, usando fallback');
+        imageUrl = _getFallbackImage(title);
+      }
     } else {
-      print('   ! No hay imagen en DB, usando por defecto');
+      print('   ! No hay imagen, usando por defecto');
       imageUrl = _getFallbackImage(title);
     }
+    
+    // DEBUG EXTRA: Mostrar URL completa
+    print('   📸 URL final imagen: ${imageUrl.substring(0, min(80, imageUrl.length))}...');
     
     // 2. Obtener NOMBRE DEL AUTOR
     String authorName = 'Anónimo';
@@ -157,6 +244,14 @@ class ArticleRepositoryImpl implements ArticleRepository {
     print('   👤 Autor final: $authorName');
     print('   🖼️ Imagen: ${imageUrl.substring(0, min(60, imageUrl.length))}...');
     
+    // ⭐ RESUMEN FINAL PARA DEBUG
+    print('   📊 RESUMEN FINAL artículo "$title":');
+    print('   • Imagen URL: $imageUrl');
+    print('   • Longitud: ${imageUrl.length} caracteres');
+    print('   • Comienza con https?: ${imageUrl.startsWith('https://')}');
+    print('   • Es Unsplash gato?: ${imageUrl.contains('1514888286974')}');
+    print('   ---');
+    
     return ArticleEntity(
       id: doc.id.hashCode,
       author: authorName,
@@ -169,14 +264,21 @@ class ArticleRepositoryImpl implements ArticleRepository {
     );
   }
 
+  // ⭐ FUNCIÓN CORREGIDA: Mejor manejo de errores
   Future<String> _getRealImageUrlFromGsUrl(String gsUrl) async {
     try {
+      // Verificar que sea una URL válida de Firebase Storage
+      if (!gsUrl.startsWith('gs://')) {
+        throw Exception('URL no es de Firebase Storage: $gsUrl');
+      }
+      
       final storageRef = storage.refFromURL(gsUrl);
       final downloadUrl = await storageRef.getDownloadURL();
+      
       return downloadUrl;
     } catch (e) {
-      print('   ❌ Error obteniendo imagen: $e');
-      rethrow;
+      print('   ❌ Error Firebase Storage: $e');
+      rethrow; // Relanza para que _createArticleWithAuthor lo maneje
     }
   }
 
@@ -185,17 +287,21 @@ class ArticleRepositoryImpl implements ArticleRepository {
     return '${content.substring(0, length)}...';
   }
 
+  // ⭐⭐ FUNCIÓN CORREGIDA: URLs limpias sin parámetros
   String _getFallbackImage(String title) {
     final lowerTitle = title.toLowerCase();
     
     if (lowerTitle.contains('christmas') || lowerTitle.contains('navidad')) {
-      return 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=800&h=600&fit=crop';
+      return _christmasImageUrl; // URL limpia
     } 
     else if (lowerTitle.contains('cat') || lowerTitle.contains('gato')) {
-      return 'https://images.unsplash.com/photo-1514888286974-6d03bde4ba42?w=800&h=600&fit=crop';
+      return _catImageUrl; // URL limpia
+    }
+    else if (lowerTitle.contains('dog') || lowerTitle.contains('perro')) {
+      return _dogImageUrl; // URL limpia
     }
     else {
-      return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&h=600&fit=crop';
+      return _defaultImageUrl; // URL limpia
     }
   }
 
