@@ -30,6 +30,43 @@ class ArticleRepositoryImpl implements ArticleRepository {
       final snapshot = await firestore.collection('articles').get();
       print('📚 ${snapshot.docs.length} artículos encontrados');
       
+      // ⭐⭐ DEBUG EXTREMO: VERIFICAR DATOS REALES DE FIRESTORE
+      print('\n🔍🔍🔍 DEBUG EXTREMO - DATOS CRUDOS DE FIRESTORE 🔍🔍🔍');
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('\n📄 DOCUMENTO: ${doc.id}');
+        print('   🔑 TODAS LAS LLAVES: ${data.keys.toList()}');
+        print('   📍 ¿Tiene thumbnailURL?: ${data.containsKey('thumbnailURL')}');
+        
+        if (data.containsKey('thumbnailURL')) {
+          final value = data['thumbnailURL'];
+          print('   💾 Valor thumbnailURL: "$value"');
+          print('   📏 Longitud: ${value.toString().length}');
+          print('   🏷️  Tipo: ${value.runtimeType}');
+          print('   🔍 ¿Es null?: ${value == null}');
+          print('   🔍 ¿Es string vacío?: ${value.toString().isEmpty}');
+        } else {
+          print('   ❌ NO TIENE thumbnailURL!');
+        }
+        
+        // Mostrar TODOS los valores para article3
+        if (doc.id == 'article3') {
+          print('   🎯 ARTICLE3 - DATOS COMPLETOS:');
+          data.forEach((key, value) {
+            print('      "$key": "$value" (Tipo: ${value.runtimeType})');
+          });
+          
+          // COMPARAR CON ARTICLE1
+          final article1Doc = snapshot.docs.firstWhere((d) => d.id == 'article1');
+          final article1Data = article1Doc.data() as Map<String, dynamic>;
+          print('   🔄 COMPARACIÓN CON ARTICLE1:');
+          print('      article1 thumbnailURL: "${article1Data['thumbnailURL']}"');
+        }
+        
+        print('   ---');
+      }
+      print('🔍🔍🔍 FIN DEBUG EXTREMO 🔍🔍🔍\n');
+      
       // ⭐ DEBUG CRÍTICO: Mostrar todos los documentos
       print('📋 LISTA COMPLETA DE DOCUMENTOS:');
       for (final doc in snapshot.docs) {
