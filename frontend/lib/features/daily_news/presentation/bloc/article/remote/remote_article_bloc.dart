@@ -11,9 +11,10 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
   
   RemoteArticlesBloc(this._getArticleUseCase) : super(const RemoteArticlesLoading()) {
     on<GetArticles>(onGetArticles);
+    on<RefreshArticles>(onGetArticles); // ✅ AGREGAR ESTA LÍNEA
   }
 
-  void onGetArticles(GetArticles event, Emitter<RemoteArticlesState> emit) async {
+  void onGetArticles(RemoteArticlesEvent event, Emitter<RemoteArticlesState> emit) async {
     print('🎭 Bloc: Ejecutando onGetArticles...');
     
     try {
@@ -21,7 +22,6 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
       print('📊 Bloc: Resultado: $dataState');
 
       if (dataState is DataSuccess) {
-        // ✅ CORREGIDO: Verificar null antes de usar !
         if (dataState.data != null) {
           emit(RemoteArticlesDone(dataState.data!));
         } else {
@@ -31,7 +31,6 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
       
       else if (dataState is DataFailed) {
         print('❌ Bloc: DataFailed recibido');
-        // ✅ CORREGIDO: Usar DioException, no String
         emit(RemoteArticlesError(
           dataState.error ?? DioException(
             requestOptions: RequestOptions(path: '/articles'),
@@ -43,7 +42,6 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
       
     } catch (e) {
       print('💥 Bloc: Excepción: $e');
-      // ✅ CORREGIDO: Convertir cualquier excepción a DioException
       emit(RemoteArticlesError(
         DioException(
           requestOptions: RequestOptions(path: '/articles'),

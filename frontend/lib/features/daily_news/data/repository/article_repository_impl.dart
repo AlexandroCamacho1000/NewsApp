@@ -194,6 +194,54 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
+  @override
+  Future<void> updateArticle(ArticleEntity article) async {
+    try {
+      print('✏️ [REPOSITORY] Actualizando artículo: "${article.title}"');
+      
+      // Buscar por título (simplificado)
+      final querySnapshot = await firestore
+          .collection('articles')
+          .where('title', isEqualTo: article.title)
+          .limit(1)
+          .get();
+      
+      if (querySnapshot.docs.isEmpty) {
+        print('⚠️ [REPOSITORY] Artículo no encontrado. Creando nuevo...');
+        await saveArticle(article);
+        return;
+      }
+      
+      final docId = querySnapshot.docs.first.id;
+      
+      // MISMA estructura que saveArticle
+      final articleData = {
+        'title': article.title ?? 'Sin título',
+        'content': article.content ?? '',
+        'excerpt': (article.description?.isNotEmpty ?? false)
+            ? article.description!
+            : _generateExcerpt(article.content ?? ''),
+        'thumbnailURL': (article.urlToImage?.isNotEmpty ?? false)
+            ? article.urlToImage!
+            : _getFallbackImage(article.title ?? ''),
+        'authorId': 'utJbxTZ7ezTot9wVOTAh', // MISMO ID que saveArticle
+        'published': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      
+      await firestore
+          .collection('articles')
+          .doc(docId)
+          .update(articleData);
+      
+      print('✅ [REPOSITORY] Artículo actualizado: $docId');
+      
+    } catch (e) {
+      print('❌ [REPOSITORY] ERROR updateArticle: $e');
+      rethrow;
+    }
+  }
+
   Future<void> _ensureAuthorExists(String authorId, String authorName) async {
     try {
       final userRef = firestore.collection('users').doc(authorId);
