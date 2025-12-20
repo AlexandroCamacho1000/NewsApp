@@ -1,4 +1,4 @@
-import 'dart:math'; // ✅ IMPORT NECESARIO para la función min()
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -48,13 +48,75 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
+  @override
+  Future<void> saveArticle(ArticleEntity article) async {
+    try {
+      print('💾 Guardando artículo en Firestore: "${article.title}"');
+      
+      // 1. Datos en EXACTA estructura de article1 (con null-safety)
+      final articleData = {
+        'title': article.title ?? 'Sin título',
+        'content': article.content ?? '',
+        'excerpt': (article.description?.isNotEmpty ?? false)
+            ? article.description!
+            : _generateExcerpt(article.content ?? ''),
+        'thumbnailURL': (article.urlToImage?.isNotEmpty ?? false)
+            ? article.urlToImage!
+            : _getFallbackImage(article.title ?? ''),
+        'authorId': 'utJbxTZ7ezTot9wVOTAh', // ← Mismo ID que article1
+        'published': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      
+      print('📝 Datos a guardar:');
+      articleData.forEach((key, value) {
+        print('   $key: $value');
+      });
+      
+      // 2. Guardar con .add() (como article1, article2, article3)
+      final docRef = await firestore
+          .collection('articles')
+          .add(articleData);
+      
+      print('✅ Artículo guardado con ID: ${docRef.id}');
+      print('📍 Ruta: articles/${docRef.id}');
+      
+      // 3. También guardar el autor en colección users si no existe
+      await _ensureAuthorExists('utJbxTZ7ezTot9wVOTAh', article.author ?? 'Anónimo');
+      
+    } catch (e) {
+      print('❌ ERROR en saveArticle: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureAuthorExists(String authorId, String authorName) async {
+    try {
+      final userRef = firestore.collection('users').doc(authorId);
+      final userDoc = await userRef.get();
+      
+      if (!userDoc.exists) {
+        await userRef.set({
+          'name': authorName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        print('👤 Autor creado en users: $authorName');
+      } else {
+        print('👤 Autor ya existe: $authorName');
+      }
+    } catch (e) {
+      print('⚠️ Error creando autor: $e');
+    }
+  }
+
   Future<ArticleEntity> _createArticleWithAuthor(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final title = data['title']?.toString()?.trim() ?? 'Sin título';
     
     print('\n📰 Procesando: "$title"');
     
-    // 1. Obtener imagen (MÉTODO QUE FUNCIONA)
+    // 1. Obtener imagen
     final gsUrl = data['thumbnailURL']?.toString()?.trim() ?? 
                   data[' thumbnailURL']?.toString()?.trim() ?? '';
     
@@ -92,7 +154,6 @@ class ArticleRepositoryImpl implements ArticleRepository {
       print('   ℹ️ No hay authorId en el artículo');
     }
     
-    // ✅ LÍNEA CORREGIDA: Usa min() correctamente
     print('   👤 Autor final: $authorName');
     print('   🖼️ Imagen: ${imageUrl.substring(0, min(60, imageUrl.length))}...');
     
@@ -110,18 +171,18 @@ class ArticleRepositoryImpl implements ArticleRepository {
 
   Future<String> _getRealImageUrlFromGsUrl(String gsUrl) async {
     try {
-      // Usar refFromURL del SDK
       final storageRef = storage.refFromURL(gsUrl);
-      
-      // Obtener URL de descarga
       final downloadUrl = await storageRef.getDownloadURL();
-      
       return downloadUrl;
-      
     } catch (e) {
       print('   ❌ Error obteniendo imagen: $e');
       rethrow;
     }
+  }
+
+  String _generateExcerpt(String content, {int length = 150}) {
+    if (content.length <= length) return content;
+    return '${content.substring(0, length)}...';
   }
 
   String _getFallbackImage(String title) {
@@ -152,9 +213,6 @@ class ArticleRepositoryImpl implements ArticleRepository {
 
   @override
   Future<List<ArticleEntity>> getSavedArticles() async => [];
-
-  @override
-  Future<void> saveArticle(ArticleEntity article) async {}
 
   @override
   Future<void> removeArticle(ArticleEntity article) async {}

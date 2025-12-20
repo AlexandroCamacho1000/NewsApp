@@ -5,6 +5,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
+// IMPORTAR ESTOS NUEVOS
+import 'package:news_app_clean_architecture/features/daily_news/domain/entities/article.dart';
+import 'package:news_app_clean_architecture/features/daily_news/data/repository/article_repository_impl.dart';
+
 class CreateArticlePage extends StatefulWidget {
   const CreateArticlePage({Key? key}) : super(key: key);
 
@@ -63,52 +67,51 @@ class _CreateArticlePageState extends State<CreateArticlePage> {
     }
   }
 
-  // Función PRINCIPAL para guardar artículo
+  // FUNCIÓN CORREGIDA: Sin getIt, instanciando directamente
   Future<void> _saveArticle() async {
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
     
     try {
-      final firestore = FirebaseFirestore.instance;
-      
-      // 1. Crear documento vacío para obtener ID
-      final articleRef = firestore.collection('articles').doc();
-      final articleId = articleRef.id;
+      // 1. Generar un ID temporal para la imagen
+      final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
       
       // 2. Subir imagen si existe
       String? imageUrl;
       if (_selectedImage != null) {
-        imageUrl = await _uploadImage(articleId);
+        imageUrl = await _uploadImage(tempId);
+        print('🖼️ Imagen subida: $imageUrl');
       }
       
-      // 3. URL de imagen por defecto si no hay imagen
+      // 3. Usar URL por defecto si no hay imagen
       imageUrl ??= 'https://picsum.photos/1200/630';
       
-      // 4. Crear el artículo en Firestore
-      final articleData = {
-        'id': articleId,
-        'title': _titleController.text,
-        'content': _contentController.text,
-        'author': _authorController.text,
-        'authorId': 'current_user_id', // TODO: Cambiar cuando tengas autenticación
-        'imageUrl': imageUrl,
-        'thumbnailURL': imageUrl, // Según tu schema
-        'published': true,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'publishedAt': FieldValue.serverTimestamp(),
-        'views': 0,
-        'likes': 0,
-        'tags': [], // Puedes agregar tags después
-      };
+      // 4. Crear la entidad ArticleEntity
+      final article = ArticleEntity(
+        id: 0, // Se ignora - Firestore generará su propio ID
+        author: _authorController.text.isNotEmpty 
+            ? _authorController.text 
+            : 'Anónimo',
+        title: _titleController.text,
+        description: _generateExcerpt(_contentController.text),
+        url: '',
+        urlToImage: imageUrl,
+        publishedAt: DateTime.now().toIso8601String(),
+        content: _contentController.text,
+      );
       
-      await articleRef.set(articleData);
+      // 5. ✅ CREAR REPOSITORIO DIRECTAMENTE (sin getIt)
+      final repository = ArticleRepositoryImpl(
+        firestore: FirebaseFirestore.instance,
+        storage: FirebaseStorage.instance,
+      );
       
-      print('✅ Artículo guardado: $articleId');
-      print('📝 Datos: $articleData');
+      await repository.saveArticle(article);
       
-      // Mostrar mensaje de éxito
+      print('✅ Artículo guardado usando repositorio');
+      
+      // 6. Mostrar éxito
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Artículo publicado exitosamente'),
@@ -117,8 +120,8 @@ class _CreateArticlePageState extends State<CreateArticlePage> {
         ),
       );
       
-      // Esperar un momento y regresar
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // 7. Esperar y regresar
+      await Future.delayed(const Duration(milliseconds: 1000));
       Navigator.pop(context);
       
     } catch (e) {
@@ -126,7 +129,7 @@ class _CreateArticlePageState extends State<CreateArticlePage> {
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ Error: $e'),
+          content: Text('❌ Error: ${e.toString()}'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 3),
         ),
@@ -134,6 +137,12 @@ class _CreateArticlePageState extends State<CreateArticlePage> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  // Función auxiliar para generar excerpt
+  String _generateExcerpt(String content, {int length = 150}) {
+    if (content.length <= length) return content;
+    return '${content.substring(0, length)}...';
   }
 
   @override
