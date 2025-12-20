@@ -11,11 +11,11 @@ class ArticleRepositoryImpl implements ArticleRepository {
   final FirebaseFirestore firestore;
   final FirebaseStorage storage;
 
-  // ⭐ URLs constantes para imágenes por defecto (sin parámetros)
-  static const _catImageUrl = 'https://images.unsplash.com/photo-1514888286974-6d03bde4ba42';
-  static const _christmasImageUrl = 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09';
-  static const _dogImageUrl = 'https://images.unsplash.com/photo-1552053831-71594a27632d';
-  static const _defaultImageUrl = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c';
+  // ⭐ URLs CONFIABLES - USANDO 'static final' EN VEZ DE 'static const'
+  static final _catImageUrl = 'https://picsum.photos/1200/630?random=cat&t=${DateTime.now().millisecondsSinceEpoch}';
+  static final _christmasImageUrl = 'https://picsum.photos/1200/630?random=christmas&t=${DateTime.now().millisecondsSinceEpoch}';
+  static final _dogImageUrl = 'https://picsum.photos/1200/630?random=dog&t=${DateTime.now().millisecondsSinceEpoch}';
+  static final _defaultImageUrl = 'https://picsum.photos/1200/630?t=${DateTime.now().millisecondsSinceEpoch}';
 
   ArticleRepositoryImpl({
     required this.firestore,
@@ -108,7 +108,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       title: title,
       description: data['excerpt']?.toString()?.trim() ?? '',
       url: '',
-      urlToImage: _getFallbackImage(title), // ⭐ Siempre imagen por defecto
+      urlToImage: _getFallbackImage(title),
       publishedAt: _getPublishedAt(data),
       content: data['content']?.toString()?.trim() ?? '',
     );
@@ -176,39 +176,57 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
-  // ⭐ FUNCIÓN CORREGIDA: Ahora maneja URLs normales también
+  // ⭐⭐ FUNCIÓN COMPLETAMENTE CORREGIDA
   Future<ArticleEntity> _createArticleWithAuthor(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final title = data['title']?.toString()?.trim() ?? 'Sin título';
     
     print('\n📰 Procesando: "$title" (ID: ${doc.id})');
     
+    // ⭐⭐ CORRECCIÓN CRÍTICA: Manejo correcto del thumbnailURL
+    final rawThumbnail = data['thumbnailURL'];
     String imageUrl = '';
-    final gsUrl = data['thumbnailURL']?.toString()?.trim() ?? '';
     
-    // ⭐ LÓGICA MEJORADA: Maneja tanto URLs de Firebase como URLs normales
-    if (gsUrl.isNotEmpty) {
-      if (gsUrl.startsWith('gs://')) {
-        // Es URL de Firebase Storage
-        try {
-          print('   🔗 Procesando Firebase Storage URL...');
-          imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
-          print('   ✅ URL Firebase obtenida');
-        } catch (e) {
-          print('   ⚠️ Error con Firebase Storage, usando fallback: $e');
+    // DEBUG DETALLADO
+    print('   🔍 Valor CRUDO thumbnailURL: "$rawThumbnail" (Tipo: ${rawThumbnail?.runtimeType})');
+    
+    if (rawThumbnail != null && rawThumbnail is String) {
+      final gsUrl = rawThumbnail.trim();
+      print('   🔍 Valor RECORTADO: "$gsUrl" (Longitud: ${gsUrl.length})');
+      
+      // ⭐⭐ CORRECCIÓN: Verificar si NO es "Vacío" o vacío real
+      final isVacio = gsUrl.toLowerCase() == 'vacío' || 
+                      gsUrl.toLowerCase() == 'vacio' ||
+                      gsUrl == 'Vacío' ||
+                      gsUrl.isEmpty;
+      
+      if (!isVacio && gsUrl.isNotEmpty) {
+        if (gsUrl.startsWith('gs://')) {
+          try {
+            print('   🔗 Procesando Firebase Storage URL...');
+            imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
+            print('   ✅ URL Firebase obtenida');
+          } catch (e) {
+            print('   ⚠️ Error con Firebase Storage: $e');
+            print('   🔄 Usando fallback...');
+            imageUrl = _getFallbackImage(title);
+          }
+        } else if (gsUrl.startsWith('http')) {
+          print('   🌐 Usando URL normal...');
+          imageUrl = gsUrl;
+        } else {
+          print('   ⚠️ Formato desconocido: "$gsUrl"');
+          print('   🔄 Usando fallback...');
           imageUrl = _getFallbackImage(title);
         }
-      } else if (gsUrl.startsWith('http')) {
-        // Es URL normal (picsum.photos, unsplash, etc.)
-        print('   🌐 Usando URL normal: ${gsUrl.substring(0, min(50, gsUrl.length))}...');
-        imageUrl = gsUrl;
       } else {
-        // URL inválida o formato desconocido
-        print('   ⚠️ URL con formato desconocido, usando fallback');
+        print('   ⚠️ Valor es "Vacío", vacío o inválido');
+        print('   🔄 Usando imagen por defecto');
         imageUrl = _getFallbackImage(title);
       }
     } else {
-      print('   ! No hay imagen, usando por defecto');
+      print('   ⚠️ thumbnailURL es null o no es String');
+      print('   🔄 Usando imagen por defecto');
       imageUrl = _getFallbackImage(title);
     }
     
@@ -249,7 +267,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
     print('   • Imagen URL: $imageUrl');
     print('   • Longitud: ${imageUrl.length} caracteres');
     print('   • Comienza con https?: ${imageUrl.startsWith('https://')}');
-    print('   • Es Unsplash gato?: ${imageUrl.contains('1514888286974')}');
+    print('   • Es picsum.photos?: ${imageUrl.contains('picsum.photos')}');
     print('   ---');
     
     return ArticleEntity(
@@ -278,7 +296,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       return downloadUrl;
     } catch (e) {
       print('   ❌ Error Firebase Storage: $e');
-      rethrow; // Relanza para que _createArticleWithAuthor lo maneje
+      rethrow;
     }
   }
 
@@ -287,21 +305,22 @@ class ArticleRepositoryImpl implements ArticleRepository {
     return '${content.substring(0, length)}...';
   }
 
-  // ⭐⭐ FUNCIÓN CORREGIDA: URLs limpias sin parámetros
+  // ⭐⭐ FUNCIÓN MEJORADA: URLs con timestamp único
   String _getFallbackImage(String title) {
     final lowerTitle = title.toLowerCase();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
     
     if (lowerTitle.contains('christmas') || lowerTitle.contains('navidad')) {
-      return _christmasImageUrl; // URL limpia
+      return 'https://picsum.photos/1200/630?random=christmas&t=$timestamp';
     } 
     else if (lowerTitle.contains('cat') || lowerTitle.contains('gato')) {
-      return _catImageUrl; // URL limpia
+      return 'https://picsum.photos/1200/630?random=cat&t=$timestamp';
     }
     else if (lowerTitle.contains('dog') || lowerTitle.contains('perro')) {
-      return _dogImageUrl; // URL limpia
+      return 'https://picsum.photos/1200/630?random=dog&t=$timestamp';
     }
     else {
-      return _defaultImageUrl; // URL limpia
+      return 'https://picsum.photos/1200/630?t=$timestamp';
     }
   }
 
