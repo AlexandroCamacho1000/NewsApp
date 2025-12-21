@@ -11,18 +11,27 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
   
   RemoteArticlesBloc(this._getArticleUseCase) : super(const RemoteArticlesLoading()) {
     on<GetArticles>(onGetArticles);
-    on<RefreshArticles>(onGetArticles); // ✅ AGREGAR ESTA LÍNEA
+    on<RefreshArticles>(onGetArticles);
   }
 
   void onGetArticles(RemoteArticlesEvent event, Emitter<RemoteArticlesState> emit) async {
-    print('🎭 Bloc: Ejecutando onGetArticles...');
+    print('🎭 BLOC: Ejecutando onGetArticles...');
+    print('📩 Evento recibido: ${event.runtimeType}');
+    
+    // ✅ DETERMINAR SI ES RECARGA FORZADA
+    final forceRefresh = event is RefreshArticles;
+    print('🔄 BLOC: forceRefresh = $forceRefresh');
     
     try {
-      final dataState = await _getArticleUseCase();
-      print('📊 Bloc: Resultado: $dataState');
+      // ✅ CORRECCIÓN CRÍTICA: Pasar el parámetro forceRefresh
+      final dataState = await _getArticleUseCase.call(params: forceRefresh);
+      
+      print('📊 BLOC: UseCase completado (forceRefresh: $forceRefresh)');
+      print('📊 BLOC: Resultado tipo: ${dataState.runtimeType}');
 
       if (dataState is DataSuccess) {
         if (dataState.data != null) {
+          print('✅ BLOC: ${dataState.data!.length} artículos cargados');
           emit(RemoteArticlesDone(dataState.data!));
         } else {
           emit(const RemoteArticlesDone([]));
@@ -30,7 +39,7 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
       } 
       
       else if (dataState is DataFailed) {
-        print('❌ Bloc: DataFailed recibido');
+        print('❌ BLOC: DataFailed recibido');
         emit(RemoteArticlesError(
           dataState.error ?? DioException(
             requestOptions: RequestOptions(path: '/articles'),
@@ -41,7 +50,7 @@ class RemoteArticlesBloc extends Bloc<RemoteArticlesEvent, RemoteArticlesState> 
       }
       
     } catch (e) {
-      print('💥 Bloc: Excepción: $e');
+      print('💥 BLOC: Excepción: $e');
       emit(RemoteArticlesError(
         DioException(
           requestOptions: RequestOptions(path: '/articles'),

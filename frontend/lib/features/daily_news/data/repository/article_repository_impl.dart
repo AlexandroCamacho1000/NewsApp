@@ -23,11 +23,21 @@ class ArticleRepositoryImpl implements ArticleRepository {
   }) : storage = storage ?? FirebaseStorage.instance;
 
   @override
-  Future<DataState<List<ArticleEntity>>> getNewsArticles() async {
-    print('🚀 OBTENIENDO ARTÍCULOS CON AUTORES');
+  Future<DataState<List<ArticleEntity>>> getNewsArticles({bool forceRefresh = false}) async { // ✅ AGREGADO PARÁMETRO
+    print('🚀 OBTENIENDO ARTÍCULOS CON AUTORES (forceRefresh: $forceRefresh)');
     
     try {
-      final snapshot = await firestore.collection('articles').get();
+      // ⭐⭐ CONFIGURACIÓN CRÍTICA: Usar Source.server cuando forceRefresh es true
+      final GetOptions options = GetOptions(
+        source: forceRefresh ? Source.server : Source.cache,
+      );
+      
+      print('📊 OPTIONS DE CONSULTA: source = ${options.source}');
+      
+      final snapshot = await firestore
+          .collection('articles')
+          .get(options); // ✅ PASAR OPCIONES
+      
       print('📚 ${snapshot.docs.length} artículos encontrados');
       
       // ⭐⭐ DEBUG EXTREMO: VERIFICAR DATOS REALES DE FIRESTORE
