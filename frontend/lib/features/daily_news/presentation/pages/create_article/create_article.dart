@@ -87,9 +87,9 @@ class _CreateArticlePageState extends State<CreateArticlePage> {
       // 3. Usar URL por defecto si no hay imagen
       imageUrl ??= 'https://picsum.photos/1200/630';
       
-      // 4. Crear la entidad ArticleEntity
+      // 4. Crear la entidad ArticleEntity - ⭐⭐ CORREGIDO: id: null en lugar de 0
       final article = ArticleEntity(
-        id: 0, // Se ignora - Firestore generará su propio ID
+        id: null, // ⭐⭐ CORREGIDO: Cambiar de 0 a null
         author: _authorController.text.isNotEmpty 
             ? _authorController.text 
             : 'Anónimo',

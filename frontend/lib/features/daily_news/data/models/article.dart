@@ -1,18 +1,19 @@
-import 'package:floor/floor.dart';
+// lib/features/daily_news/data/models/article.dart
 import 'package:news_app_clean_architecture/features/daily_news/domain/entities/article.dart';
-import '../../../../core/constants/constants.dart';
 
-@Entity(tableName: 'article',primaryKeys: ['id'])
 class ArticleModel extends ArticleEntity {
+  final String? id;
+  
   const ArticleModel({
-    int ? id,
-    String ? author,
-    String ? title,
-    String ? description,
-    String ? url,
-    String ? urlToImage,
-    String ? publishedAt,
-    String ? content,
+    this.id,
+    String? author,
+    String? title,
+    String? description,
+    String? url,
+    String? urlToImage,
+    String? publishedAt,  // publishedAt ES STRING
+    String? content,
+    bool? published,      // ✅ AÑADIDO: published ES BOOL
   }): super(
     id: id,
     author: author,
@@ -20,32 +21,37 @@ class ArticleModel extends ArticleEntity {
     description: description,
     url: url,
     urlToImage: urlToImage,
-    publishedAt: publishedAt,
+    publishedAt: publishedAt,  // String
     content: content,
+    published: published,      // ✅ PASANDO EL NUEVO CAMPO BOOL
   );
 
-  factory ArticleModel.fromJson(Map < String, dynamic > map) {
+  // Si tienes factory fromJson y toJson, asegúrate de manejar ambos campos:
+  factory ArticleModel.fromJson(Map<String, dynamic> json) {
     return ArticleModel(
-      author: map['author'] ?? "",
-      title: map['title'] ?? "",
-      description: map['description'] ?? "",
-      url: map['url'] ?? "",
-      urlToImage: map['urlToImage'] != null && map['urlToImage'] != "" ? map['urlToImage'] : kDefaultImage,
-      publishedAt: map['publishedAt'] ?? "",
-      content: map['content'] ?? "",
+      id: json['id']?.toString(),
+      author: json['author']?.toString(),
+      title: json['title']?.toString(),
+      description: json['description']?.toString(),
+      url: json['url']?.toString(),
+      urlToImage: json['urlToImage']?.toString(),
+      publishedAt: json['publishedAt']?.toString(),
+      content: json['content']?.toString(),
+      published: json['published'] as bool?,  // ✅ MANEJANDO published
     );
   }
 
-  factory ArticleModel.fromEntity(ArticleEntity entity) {
-    return ArticleModel(
-      id: entity.id,
-      author: entity.author,
-      title: entity.title,
-      description: entity.description,
-      url: entity.url,
-      urlToImage: entity.urlToImage,
-      publishedAt: entity.publishedAt,
-      content: entity.content
-    );
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'author': author,
+      'title': title,
+      'description': description,
+      'url': url,
+      'urlToImage': urlToImage,
+      'publishedAt': publishedAt,
+      'content': content,
+      'published': published,  // ✅ INCLUYENDO published
+    };
   }
 }

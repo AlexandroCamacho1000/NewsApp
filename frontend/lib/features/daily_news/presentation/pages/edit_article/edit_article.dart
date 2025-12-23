@@ -28,25 +28,27 @@ class _EditArticlePageState extends State<EditArticlePage> {
   void initState() {
     super.initState();
     
-    print('🔍 DIAGNÓSTICO - EditArticlePage recibió:');
-    print('   ID: ${widget.article.id}');
-    print('   Título: ${widget.article.title}');
-    print('   Autor: ${widget.article.author}');
-    print('   Descripción: ${widget.article.description}');
-    print('   Contenido: ${widget.article.content}');
+    print('\n🔍🔍🔍 EDITARTICLE - INICIANDO 🔍🔍🔍');
+    print('   ID del artículo: ${widget.article.id}');
+    print('   Tipo de ID: ${widget.article.id.runtimeType}');
+    print('   Título: "${widget.article.title}"');
+    print('   Autor: "${widget.article.author}"');
     print('   Contenido length: ${widget.article.content?.length ?? 0}');
+    print('   Descripción length: ${widget.article.description?.length ?? 0}');
     
     String contenidoFinal = widget.article.content ?? '';
     
     if ((contenidoFinal.isEmpty || contenidoFinal == 'null') && 
         widget.article.description != null) {
       contenidoFinal = widget.article.description!;
-      print('⚠️  Usando descripción como contenido: $contenidoFinal');
+      print('   ⚠️ Usando descripción como contenido: ${contenidoFinal.length} caracteres');
     }
     
     _titleController = TextEditingController(text: widget.article.title ?? '');
     _contentController = TextEditingController(text: contenidoFinal);
     _authorController = TextEditingController(text: widget.article.author ?? '');
+    
+    print('✅ EditArticle inicializado correctamente');
   }
 
   @override
@@ -63,79 +65,74 @@ class _EditArticlePageState extends State<EditArticlePage> {
     setState(() => _isLoading = true);
     
     try {
-      print('💾 BUSCANDO ARTÍCULO EN FIRESTORE...');
-      print('   Título original: "${widget.article.title}"');
-      print('   Autor original: "${widget.article.author}"');
-      print('   ID numérico: ${widget.article.id}');
+      print('\n💾💾💾 INICIANDO GUARDADO DE CAMBIOS 💾💾💾');
+      print('   Título editado: "${_titleController.text}"');
+      print('   Autor editado: "${_authorController.text}"');
+      print('   Contenido editado: ${_contentController.text.length} caracteres');
+      print('   ID del artículo: ${widget.article.id}');
+      
+      if (widget.article.id == null || widget.article.id.toString().isEmpty) {
+        throw Exception('❌ El artículo no tiene ID válido');
+      }
+      
+      final articleId = widget.article.id.toString();
+      print('   🔍 Buscando documento con ID: $articleId');
       
       QuerySnapshot querySnapshot;
       DocumentReference? docRef;
       String? foundDocId;
       
-      if (widget.article.title != null && widget.article.title!.isNotEmpty) {
-        print('🔍 Buscando por título: "${widget.article.title}"');
+      if (articleId.isNotEmpty) {
+        print('   🎯 Intentando búsqueda por ID directo: $articleId');
         
-        querySnapshot = await FirebaseFirestore.instance
-            .collection('articles')
-            .where('title', isEqualTo: widget.article.title)
-            .limit(1)
-            .get();
+        final directRef = FirebaseFirestore.instance.collection('articles').doc(articleId);
+        final directSnapshot = await directRef.get();
         
-        if (querySnapshot.docs.isNotEmpty) {
-          docRef = querySnapshot.docs.first.reference;
-          foundDocId = querySnapshot.docs.first.id;
-          print('✅ ENCONTRADO por título! ID del documento: $foundDocId');
+        if (directSnapshot.exists) {
+          docRef = directRef;
+          foundDocId = articleId;
+          print('   ✅✅✅ ENCONTRADO POR ID DIRECTO!');
         } else {
-          print('⚠️  No encontrado por título, intentando con ID...');
+          print('   ⚠️ No encontrado por ID directo');
         }
       }
       
-      if (docRef == null && widget.article.id != null) {
-        final possibleIds = [
-          widget.article.id.toString(),
-          'article${widget.article.id}',
-          if (widget.article.id is int) 
-            (widget.article.id as int).toString(),
-        ];
-        
-        for (final testId in possibleIds) {
-          print('🔍 Probando ID: $testId');
-          final testRef = FirebaseFirestore.instance.collection('articles').doc(testId);
-          final testSnapshot = await testRef.get();
+      if (docRef == null) {
+        final title = _titleController.text.trim();
+        if (title.isNotEmpty) {
+          print('   🔍 Buscando por título: "$title"');
           
-          if (testSnapshot.exists) {
-            docRef = testRef;
-            foundDocId = testId;
-            print('✅ ENCONTRADO con ID: $foundDocId');
-            break;
-          }
-        }
-      }
-      
-      if (docRef == null && widget.article.author != null && widget.article.author!.isNotEmpty) {
-        print('🔍 Buscando por autor: "${widget.article.author}"');
-        
-        querySnapshot = await FirebaseFirestore.instance
-            .collection('articles')
-            .where('author', isEqualTo: widget.article.author)
-            .limit(5)
-            .get();
-        
-        if (querySnapshot.docs.isNotEmpty) {
-          for (final doc in querySnapshot.docs) {
-            final docTitle = doc['title'] as String?;
-            if (docTitle != null && docTitle.contains(widget.article.title ?? '')) {
-              docRef = doc.reference;
-              foundDocId = doc.id;
-              print('✅ ENCONTRADO por autor y título similar! ID: $foundDocId');
-              break;
-            }
-          }
+          querySnapshot = await FirebaseFirestore.instance
+              .collection('articles')
+              .where('title', isEqualTo: title)
+              .limit(1)
+              .get();
           
-          if (docRef == null && querySnapshot.docs.isNotEmpty) {
+          if (querySnapshot.docs.isNotEmpty) {
             docRef = querySnapshot.docs.first.reference;
             foundDocId = querySnapshot.docs.first.id;
-            print('⚠️  Tomando el primer documento del autor. ID: $foundDocId');
+            print('   ✅ Encontrado por título! ID: $foundDocId');
+          } else {
+            print('   ⚠️ No encontrado por título');
+          }
+        }
+      }
+      
+      if (docRef == null && widget.article.title != null) {
+        final originalTitle = widget.article.title!.trim();
+        if (originalTitle.isNotEmpty) {
+          print('   🔍 Buscando por título original: "$originalTitle"');
+          
+          querySnapshot = await FirebaseFirestore.instance
+              .collection('articles')
+              .where('title', isEqualTo: originalTitle)
+              .limit(1)
+              .get();
+          
+          if (querySnapshot.docs.isNotEmpty) {
+            docRef = querySnapshot.docs.first.reference;
+            foundDocId = querySnapshot.docs.first.id;
+            print('   ✅ Encontrado por título original! ID: $foundDocId');
           }
         }
       }
@@ -144,21 +141,15 @@ class _EditArticlePageState extends State<EditArticlePage> {
         throw Exception('''
 ❌ NO SE PUDO ENCONTRAR EL ARTÍCULO EN FIRESTORE
 
-Posibles causas:
-1. El artículo no existe en Firestore
-2. Los datos no coinciden (título/autor diferentes)
-3. Problema de conexión con Firestore
-
-Datos buscados:
-• Título: "${widget.article.title}"
-• Autor: "${widget.article.author}"
-• ID local: ${widget.article.id}
+ID buscado: ${widget.article.id}
+Título buscado: "${_titleController.text}"
+Título original: "${widget.article.title}"
 
 Verifica en Firebase Console que el artículo exista.
 ''');
       }
       
-      print('🎯 DOCUMENTO ENCONTRADO - ID: $foundDocId');
+      print('🎯🎯🎯 DOCUMENTO ENCONTRADO - ID: $foundDocId');
       await _updateDocument(docRef);
       
     } catch (e) {
@@ -166,7 +157,7 @@ Verifica en Firebase Console que el artículo exista.
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ Error: ${e.toString().substring(0, 100)}...'),
+          content: Text('❌ Error: ${e.toString()}'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 5),
         ),
@@ -177,69 +168,80 @@ Verifica en Firebase Console que el artículo exista.
   }
 
   Future<void> _updateDocument(DocumentReference docRef) async {
-    final updateData = {
-      'title': _titleController.text.trim(),
-      'author': _authorController.text.trim(),
-      ' content': _contentController.text.trim(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-    
-    print('📝 ACTUALIZANDO DOCUMENTO...');
-    print('   Nuevo título: ${updateData['title']}');
-    print('   Nuevo autor: ${updateData['author']}');
-    
-    final contentValue = updateData[' content'];
-    if (contentValue is String) {
-      print('   Nuevo contenido: ${contentValue.length} caracteres');
+    try {
+      final updateData = {
+        'title': _titleController.text.trim(),
+        'author': _authorController.text.trim(),
+        'content': _contentController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      
+      print('\n📝📝📝 ACTUALIZANDO DOCUMENTO EN FIRESTORE 📝📝📝');
+      print('   Document ID: ${docRef.id}');
+      print('   Nuevo título: "${updateData['title']}"');
+      print('   Nuevo autor: "${updateData['author']}"');
+      print('   Nuevo contenido: ${updateData['content'] is String ? 
+            (updateData['content'] as String).length.toString() + " caracteres" : "null"}');
+      
+      if (updateData['content'] is String) {
+        final content = updateData['content'] as String;
+        if (content.isNotEmpty) {
+          final preview = content.length > 100 
+              ? content.substring(0, 100) + '...' 
+              : content;
+          print('   Preview: "$preview"');
+        }
+      }
+      
+      await docRef.update(updateData);
+      
+      print('✅✅✅ CAMBIOS GUARDADOS EXITOSAMENTE en Firestore');
+      print('   Documento actualizado: ${docRef.id}');
+      print('   Fecha de actualización: ${DateTime.now()}');
+      
+      final updatedSnapshot = await docRef.get();
+      final updatedData = updatedSnapshot.data() as Map<String, dynamic>;
+      
+      print('🔍 VERIFICACIÓN POST-ACTUALIZACIÓN:');
+      print('   • Campos: ${updatedData.keys.join(', ')}');
+      print('   • Valor de "content": ${updatedData['content'] is String ? 
+            'String (${(updatedData['content'] as String).length} chars)' : 
+            updatedData['content']}');
+      
+      if (context.mounted) {
+        print('🔄 EDIT_ARTICLE: Disparando RefreshArticles...');
+        
+        final bloc = context.read<RemoteArticlesBloc>();
+        
+        bloc.add(RefreshArticles());
+        print('   ✅ RefreshArticles enviado (1ra vez)');
+        
+        await Future.delayed(const Duration(milliseconds: 300));
+        bloc.add(RefreshArticles());
+        print('   ✅ RefreshArticles enviado (2da vez)');
+        
+        await Future.delayed(const Duration(milliseconds: 300));
+        bloc.add(GetArticles());
+        print('   ✅ GetArticles enviado (3ra vez)');
+        
+        print('✅ Todos los eventos enviados para refrescar');
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Artículo actualizado. Recargando lista...'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        await Future.delayed(const Duration(seconds: 1));
+        Navigator.pop(context, true);
+      }
+      
+    } catch (e) {
+      print('❌❌❌ ERROR AL ACTUALIZAR DOCUMENTO: $e');
+      rethrow;
     }
-    
-    await docRef.update(updateData);
-    
-    print('✅✅✅ CAMBIOS GUARDADOS EXITOSAMENTE en Firestore');
-    print('   Documento actualizado: ${docRef.id}');
-    print('   Fecha de actualización: ${DateTime.now()}');
-    
-    // ✅✅✅ SOLUCIÓN DEFINITIVA: FORZAR DELAY Y RECARGA
-    if (context.mounted) {
-      print('🔄 EDIT_ARTICLE: Esperando 2 segundos para que Firestore se actualice...');
-      
-      // 1. ESPERAR que Firestore propague los cambios
-      await Future.delayed(const Duration(seconds: 2));
-      
-      print('🔄 EDIT_ARTICLE: Disparando RefreshArticles...');
-      
-      // 2. AGREGAR LOGS EXTRA para diagnosticar
-      final bloc = context.read<RemoteArticlesBloc>();
-      print('   ✅ Bloc disponible: ${bloc != null}');
-      
-      // 3. DISPARAR el evento MÚLTIPLES veces
-      bloc.add(RefreshArticles());
-      print('   ✅ RefreshArticles enviado (1ra vez)');
-      
-      // 4. Esperar un poco y disparar de nuevo
-      await Future.delayed(const Duration(milliseconds: 500));
-      bloc.add(RefreshArticles());
-      print('   ✅ RefreshArticles enviado (2da vez)');
-      
-      // 5. También disparar GetArticles por si acaso
-      await Future.delayed(const Duration(milliseconds: 300));
-      bloc.add(GetArticles());
-      print('   ✅ GetArticles enviado (3ra vez)');
-      
-      print('✅ EDIT_ARTICLE: Todos los eventos enviados');
-    }
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✅ Artículo actualizado. Recargando lista...'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
-    );
-    
-    // Esperar antes de regresar
-    await Future.delayed(const Duration(seconds: 1));
-    Navigator.pop(context, true);
   }
 
   @override
@@ -355,7 +357,7 @@ Verifica en Firebase Console que el artículo exista.
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(12),
                     hintText: 'Escribe el contenido del artículo aquí...',
-                    alignLabelWithHint: true,
+                    alignLabelWithHint: true, // ⭐⭐ CORREGIDO: Hit → Hint
                   ),
                 ),
               ),
@@ -384,7 +386,7 @@ Verifica en Firebase Console que el artículo exista.
                         ],
                       )
                     : const Text(
-                        'BUSCAR Y GUARDAR EN FIRESTORE',
+                        'GUARDAR CAMBIOS EN FIRESTORE',
                         style: TextStyle(fontSize: 16, color: Colors.white),
                       ),
               ),
