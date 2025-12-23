@@ -184,16 +184,27 @@ class ArticleDetailsView extends HookWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (article!.description != null && article!.description!.isNotEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(article!.description!, style: const TextStyle(fontSize: 16, color: Colors.black87, height: 1.6)),
-                const SizedBox(height: 24),
-              ],
-            ),
+          // ✅ SOLUCIÓN: MOSTRAR SOLO EL CONTENIDO PRINCIPAL (NO description + content)
           if (article!.content != null && article!.content!.isNotEmpty)
-            Text(article!.content!, style: TextStyle(fontSize: 15, color: Colors.grey[800], height: 1.7)),
+            Text(
+              article!.content!,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[800],
+                height: 1.7,
+              ),
+            )
+          else if (article!.description != null && article!.description!.isNotEmpty)
+            // Solo mostrar description si no hay content disponible
+            Text(
+              article!.description!,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.black87,
+                height: 1.6,
+              ),
+            ),
+          
           const SizedBox(height: 30),
           Container(height: 1, color: Colors.grey[200]),
           const SizedBox(height: 20),
@@ -214,7 +225,12 @@ class ArticleDetailsView extends HookWidget {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compartir'), duration: Duration(seconds: 2)));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Compartir'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
                 },
                 icon: const Icon(Ionicons.share_social_outline, size: 18),
                 label: const Text('Compartir'),
@@ -259,7 +275,6 @@ class ArticleDetailsView extends HookWidget {
     );
   }
 
-  // ⭐⭐ FUNCIÓN PARA EDITAR ARTÍCULO - VERSIÓN CORREGIDA
   void _onEditButtonPressed(BuildContext context) {
     print('🚀 Navegando a EditArticlePage...');
     Navigator.push(
