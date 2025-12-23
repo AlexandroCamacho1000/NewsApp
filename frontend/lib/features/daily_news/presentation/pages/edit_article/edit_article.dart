@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../domain/entities/article.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';  // ✅ Para context.read y BlocProvider
-import '../../bloc/article/remote/remote_article_bloc.dart';  // ✅ Para RemoteArticlesBloc
-import '../../bloc/article/remote/remote_article_event.dart';  // ✅ Para RefreshArticles
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../bloc/article/remote/remote_article_bloc.dart';
+import '../../bloc/article/remote/remote_article_event.dart';
 
 class EditArticlePage extends StatefulWidget {
   final ArticleEntity article;
@@ -27,7 +28,6 @@ class _EditArticlePageState extends State<EditArticlePage> {
   void initState() {
     super.initState();
     
-    // DIAGNÓSTICO
     print('🔍 DIAGNÓSTICO - EditArticlePage recibió:');
     print('   ID: ${widget.article.id}');
     print('   Título: ${widget.article.title}');
@@ -36,10 +36,8 @@ class _EditArticlePageState extends State<EditArticlePage> {
     print('   Contenido: ${widget.article.content}');
     print('   Contenido length: ${widget.article.content?.length ?? 0}');
     
-    // Busca contenido alternativo si está vacío
     String contenidoFinal = widget.article.content ?? '';
     
-    // Si está vacío, intenta con la descripción
     if ((contenidoFinal.isEmpty || contenidoFinal == 'null') && 
         widget.article.description != null) {
       contenidoFinal = widget.article.description!;
@@ -74,7 +72,6 @@ class _EditArticlePageState extends State<EditArticlePage> {
       DocumentReference? docRef;
       String? foundDocId;
       
-      // 🔍 ESTRATEGIA 1: Buscar por TÍTULO (la más confiable)
       if (widget.article.title != null && widget.article.title!.isNotEmpty) {
         print('🔍 Buscando por título: "${widget.article.title}"');
         
@@ -93,14 +90,12 @@ class _EditArticlePageState extends State<EditArticlePage> {
         }
       }
       
-      // 🔍 ESTRATEGIA 2: Si no se encontró por título, probar con el ID
       if (docRef == null && widget.article.id != null) {
-        // Intentar ID como string (por si es "article1", "article2", etc.)
         final possibleIds = [
-          widget.article.id.toString(), // Como string
-          'article${widget.article.id}', // Como "article251758"
+          widget.article.id.toString(),
+          'article${widget.article.id}',
           if (widget.article.id is int) 
-            (widget.article.id as int).toString(), // Solo como número
+            (widget.article.id as int).toString(),
         ];
         
         for (final testId in possibleIds) {
@@ -117,18 +112,16 @@ class _EditArticlePageState extends State<EditArticlePage> {
         }
       }
       
-      // 🔍 ESTRATEGIA 3: Si aún no se encontró, buscar por AUTOR
       if (docRef == null && widget.article.author != null && widget.article.author!.isNotEmpty) {
         print('🔍 Buscando por autor: "${widget.article.author}"');
         
         querySnapshot = await FirebaseFirestore.instance
             .collection('articles')
             .where('author', isEqualTo: widget.article.author)
-            .limit(5) // Buscar hasta 5 con el mismo autor
+            .limit(5)
             .get();
         
         if (querySnapshot.docs.isNotEmpty) {
-          // Buscar el que tenga título más similar
           for (final doc in querySnapshot.docs) {
             final docTitle = doc['title'] as String?;
             if (docTitle != null && docTitle.contains(widget.article.title ?? '')) {
@@ -139,7 +132,6 @@ class _EditArticlePageState extends State<EditArticlePage> {
             }
           }
           
-          // Si no encontró similar, tomar el primero
           if (docRef == null && querySnapshot.docs.isNotEmpty) {
             docRef = querySnapshot.docs.first.reference;
             foundDocId = querySnapshot.docs.first.id;
@@ -148,7 +140,6 @@ class _EditArticlePageState extends State<EditArticlePage> {
         }
       }
       
-      // ❌ SI NO SE ENCONTRÓ NINGÚN DOCUMENTO
       if (docRef == null) {
         throw Exception('''
 ❌ NO SE PUDO ENCONTRAR EL ARTÍCULO EN FIRESTORE
@@ -167,7 +158,6 @@ Verifica en Firebase Console que el artículo exista.
 ''');
       }
       
-      // ✅ SE ENCONTRÓ EL DOCUMENTO - PROCEDER A ACTUALIZAR
       print('🎯 DOCUMENTO ENCONTRADO - ID: $foundDocId');
       await _updateDocument(docRef);
       
@@ -187,11 +177,10 @@ Verifica en Firebase Console que el artículo exista.
   }
 
   Future<void> _updateDocument(DocumentReference docRef) async {
-    // 1. Datos a actualizar
     final updateData = {
       'title': _titleController.text.trim(),
       'author': _authorController.text.trim(),
-      ' content': _contentController.text.trim(), // ¡ESPACIO al inicio!
+      ' content': _contentController.text.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
     
@@ -199,41 +188,57 @@ Verifica en Firebase Console que el artículo exista.
     print('   Nuevo título: ${updateData['title']}');
     print('   Nuevo autor: ${updateData['author']}');
     
-    // Manejo seguro del tipo para 'length'
     final contentValue = updateData[' content'];
     if (contentValue is String) {
       print('   Nuevo contenido: ${contentValue.length} caracteres');
-      if (contentValue.length < 50) {
-        print('⚠️  ADVERTENCIA: Contenido muy corto (${contentValue.length} caracteres)');
-      }
     }
     
-    // 2. Ejecutar la actualización
     await docRef.update(updateData);
     
     print('✅✅✅ CAMBIOS GUARDADOS EXITOSAMENTE en Firestore');
     print('   Documento actualizado: ${docRef.id}');
     print('   Fecha de actualización: ${DateTime.now()}');
     
-    // 3. Mostrar éxito
+    // ✅✅✅ SOLUCIÓN DEFINITIVA: FORZAR DELAY Y RECARGA
+    if (context.mounted) {
+      print('🔄 EDIT_ARTICLE: Esperando 2 segundos para que Firestore se actualice...');
+      
+      // 1. ESPERAR que Firestore propague los cambios
+      await Future.delayed(const Duration(seconds: 2));
+      
+      print('🔄 EDIT_ARTICLE: Disparando RefreshArticles...');
+      
+      // 2. AGREGAR LOGS EXTRA para diagnosticar
+      final bloc = context.read<RemoteArticlesBloc>();
+      print('   ✅ Bloc disponible: ${bloc != null}');
+      
+      // 3. DISPARAR el evento MÚLTIPLES veces
+      bloc.add(RefreshArticles());
+      print('   ✅ RefreshArticles enviado (1ra vez)');
+      
+      // 4. Esperar un poco y disparar de nuevo
+      await Future.delayed(const Duration(milliseconds: 500));
+      bloc.add(RefreshArticles());
+      print('   ✅ RefreshArticles enviado (2da vez)');
+      
+      // 5. También disparar GetArticles por si acaso
+      await Future.delayed(const Duration(milliseconds: 300));
+      bloc.add(GetArticles());
+      print('   ✅ GetArticles enviado (3ra vez)');
+      
+      print('✅ EDIT_ARTICLE: Todos los eventos enviados');
+    }
+    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('✅ Artículo actualizado en Firestore'),
+        content: Text('✅ Artículo actualizado. Recargando lista...'),
         backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
+        duration: Duration(seconds: 2),
       ),
     );
     
-    // 4. ✅✅✅ CAMBIO CRÍTICO: DISPARAR RECARGA ANTES DE REGRESAR
-    if (context.mounted) {
-      // Importar el Bloc si no está importado (agregar al inicio del archivo):
-      // import 'package:flutter_bloc/flutter_bloc.dart';
-      // import '../../bloc/article/remote/remote_article_event.dart';
-      context.read<RemoteArticlesBloc>().add(RefreshArticles());
-    }
-    
-    // 5. Regresar a la pantalla anterior (con delay para que se vea el mensaje)
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Esperar antes de regresar
+    await Future.delayed(const Duration(seconds: 1));
     Navigator.pop(context, true);
   }
 
@@ -265,7 +270,6 @@ Verifica en Firebase Console que el artículo exista.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // TÍTULO
             const Text(
               'Título:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -289,7 +293,6 @@ Verifica en Firebase Console que el artículo exista.
             
             const SizedBox(height: 20),
             
-            // AUTOR
             const Text(
               'Autor:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -313,7 +316,6 @@ Verifica en Firebase Console que el artículo exista.
             
             const SizedBox(height: 20),
             
-            // CONTENIDO (con diagnóstico)
             Row(
               children: [
                 const Text(
@@ -361,7 +363,6 @@ Verifica en Firebase Console que el artículo exista.
             
             const SizedBox(height: 20),
             
-            // BOTÓN GUARDAR
             Center(
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _saveChanges,
@@ -389,7 +390,6 @@ Verifica en Firebase Console que el artículo exista.
               ),
             ),
             
-            // INFO DEL ARTÍCULO
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(12),

@@ -10,81 +10,121 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class ArticleRepositoryImpl implements ArticleRepository {
   final FirebaseFirestore firestore;
   final FirebaseStorage storage;
-
-  // ⭐ URLs CONFIABLES - USANDO 'static final' EN VEZ DE 'static const'
-  static final _catImageUrl = 'https://picsum.photos/1200/630?random=cat&t=${DateTime.now().millisecondsSinceEpoch}';
-  static final _christmasImageUrl = 'https://picsum.photos/1200/630?random=christmas&t=${DateTime.now().millisecondsSinceEpoch}';
-  static final _dogImageUrl = 'https://picsum.photos/1200/630?random=dog&t=${DateTime.now().millisecondsSinceEpoch}';
-  static final _defaultImageUrl = 'https://picsum.photos/1200/630?t=${DateTime.now().millisecondsSinceEpoch}';
+  bool _hasCleaned = false;
 
   ArticleRepositoryImpl({
     required this.firestore,
     FirebaseStorage? storage,
   }) : storage = storage ?? FirebaseStorage.instance;
 
-  @override
-  Future<DataState<List<ArticleEntity>>> getNewsArticles({bool forceRefresh = false}) async { // ✅ AGREGADO PARÁMETRO
-    print('🚀 OBTENIENDO ARTÍCULOS CON AUTORES (forceRefresh: $forceRefresh)');
+  // ⭐⭐ CORREGIDO: Método optimizado para limpiar duplicados
+  Future<void> _cleanDuplicateContentFields() async {
+    print('\n🧹 INICIANDO LIMPIEZA DE CAMPOS DUPLICADOS 🧹');
     
     try {
-      // ⭐⭐ CONFIGURACIÓN CRÍTICA: Usar Source.server cuando forceRefresh es true
+      final snapshot = await firestore
+          .collection('articles')
+          .get(GetOptions(source: Source.server));
+      
+      int cleanedCount = 0;
+      
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        bool needsUpdate = false;
+        final updateData = <String, dynamic>{};
+        
+        // 1. Verificar si hay ' content' (con espacio)
+        if (data.containsKey(' content')) {
+          print('   📄 ${doc.id}: Encontrado campo " content"');
+          
+          // 2. Decidir qué valor mantener
+          String? contentToKeep;
+          
+          // Prioridad: 'content' (sin espacio) si tiene valor
+          if (data.containsKey('content') && 
+              data['content'] != null && 
+              data['content'].toString().trim().isNotEmpty) {
+            contentToKeep = data['content'].toString().trim();
+            print('      ✅ Manteniendo valor de "content"');
+          } 
+          // Si no, usar el valor de ' content'
+          else if (data[' content'] != null && 
+                   data[' content'].toString().trim().isNotEmpty) {
+            contentToKeep = data[' content'].toString().trim();
+            print('      🔄 Usando valor de " content" para "content"');
+          }
+          
+          // 3. Preparar actualización
+          if (contentToKeep != null && contentToKeep.isNotEmpty) {
+            updateData['content'] = contentToKeep;
+            updateData[' content'] = FieldValue.delete();
+            needsUpdate = true;
+          }
+        }
+        
+        // 4. Eliminar otros posibles duplicados
+        final seenKeys = <String>{};
+        for (var key in data.keys) {
+          final normalizedKey = key.trim().toLowerCase();
+          if (seenKeys.contains(normalizedKey)) {
+            print('      🚫 Eliminando duplicado de "$key"');
+            updateData[key] = FieldValue.delete();
+            needsUpdate = true;
+          }
+          seenKeys.add(normalizedKey);
+        }
+        
+        // 5. Aplicar actualización si es necesario
+        if (needsUpdate) {
+          try {
+            await doc.reference.update(updateData);
+            cleanedCount++;
+            print('      ✅ Documento actualizado');
+          } catch (e) {
+            print('      ⚠️ Error actualizando: $e');
+          }
+        }
+      }
+      
+      print('\n🎉 Total documentos procesados: ${snapshot.docs.length}');
+      print('✅ Documentos corregidos: $cleanedCount');
+      
+    } catch (e) {
+      print('❌ Error en limpieza: $e');
+    }
+  }
+
+  @override
+  Future<DataState<List<ArticleEntity>>> getNewsArticles({bool forceRefresh = false}) async {
+    print('🚀 OBTENIENDO ARTÍCULOS (forceRefresh: $forceRefresh)');
+    
+    // ⭐⭐ Ejecutar limpieza solo una vez al iniciar
+    if (!_hasCleaned) {
+      await _cleanDuplicateContentFields();
+      _hasCleaned = true;
+    }
+    
+    try {
       final GetOptions options = GetOptions(
         source: forceRefresh ? Source.server : Source.cache,
       );
       
-      print('📊 OPTIONS DE CONSULTA: source = ${options.source}');
+      print('📊 Fuente de datos: ${options.source}');
       
       final snapshot = await firestore
           .collection('articles')
-          .get(options); // ✅ PASAR OPCIONES
+          .get(options);
       
       print('📚 ${snapshot.docs.length} artículos encontrados');
       
-      // ⭐⭐ DEBUG EXTREMO: VERIFICAR DATOS REALES DE FIRESTORE
-      print('\n🔍🔍🔍 DEBUG EXTREMO - DATOS CRUDOS DE FIRESTORE 🔍🔍🔍');
+      // ⭐⭐ Debug mejorado
+      print('\n🔍 VERIFICANDO ESTRUCTURA DE DOCUMENTOS');
       for (final doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        print('\n📄 DOCUMENTO: ${doc.id}');
-        print('   🔑 TODAS LAS LLAVES: ${data.keys.toList()}');
-        print('   📍 ¿Tiene thumbnailURL?: ${data.containsKey('thumbnailURL')}');
-        
-        if (data.containsKey('thumbnailURL')) {
-          final value = data['thumbnailURL'];
-          print('   💾 Valor thumbnailURL: "$value"');
-          print('   📏 Longitud: ${value.toString().length}');
-          print('   🏷️  Tipo: ${value.runtimeType}');
-          print('   🔍 ¿Es null?: ${value == null}');
-          print('   🔍 ¿Es string vacío?: ${value.toString().isEmpty}');
-        } else {
-          print('   ❌ NO TIENE thumbnailURL!');
+        final contentFields = data.keys.where((k) => k.contains('content')).toList();
+        if (contentFields.isNotEmpty) {
+          print('   📄 ${doc.id}: $contentFields');
         }
-        
-        // Mostrar TODOS los valores para article3
-        if (doc.id == 'article3') {
-          print('   🎯 ARTICLE3 - DATOS COMPLETOS:');
-          data.forEach((key, value) {
-            print('      "$key": "$value" (Tipo: ${value.runtimeType})');
-          });
-          
-          // COMPARAR CON ARTICLE1
-          final article1Doc = snapshot.docs.firstWhere((d) => d.id == 'article1');
-          final article1Data = article1Doc.data() as Map<String, dynamic>;
-          print('   🔄 COMPARACIÓN CON ARTICLE1:');
-          print('      article1 thumbnailURL: "${article1Data['thumbnailURL']}"');
-        }
-        
-        print('   ---');
-      }
-      print('🔍🔍🔍 FIN DEBUG EXTREMO 🔍🔍🔍\n');
-      
-      // ⭐ DEBUG CRÍTICO: Mostrar todos los documentos
-      print('📋 LISTA COMPLETA DE DOCUMENTOS:');
-      for (final doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        print('   • ID: ${doc.id}');
-        print('     Título: ${data['title'] ?? "Sin título"}');
-        print('     thumbnailURL: ${data['thumbnailURL'] ?? "Vacío"}');
-        print('     ---');
       }
       
       final articles = <ArticleEntity>[];
@@ -93,25 +133,22 @@ class ArticleRepositoryImpl implements ArticleRepository {
         try {
           final article = await _createArticleWithAuthor(doc);
           articles.add(article);
-          print('   ✅ Artículo "${article.title}" agregado a la lista');
         } catch (e) {
-          print('⚠️ Error procesando artículo ${doc.id}: $e');
-          // ⭐ INTENTA CREAR ARTÍCULO CON IMAGEN POR DEFECTO
+          print('⚠️ Error con artículo ${doc.id}: $e');
           try {
             final fallbackArticle = await _createFallbackArticle(doc);
             articles.add(fallbackArticle);
-            print('   🔄 Artículo creado con imagen por defecto');
           } catch (e2) {
-            print('❌ No se pudo crear artículo de respaldo: $e2');
+            print('❌ Fallback también falló: $e2');
           }
         }
       }
       
-      print('\n🎉 ${articles.length} artículos procesados exitosamente');
+      print('\n✅ ${articles.length} artículos procesados correctamente');
       return DataSuccess(articles);
       
     } catch (e) {
-      print('💥 ERROR CRÍTICO: $e');
+      print('💥 ERROR: $e');
       return DataFailed(DioException(
         requestOptions: RequestOptions(path: '/articles'),
         error: 'Error: $e',
@@ -120,20 +157,43 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
-  // ⭐ NUEVA FUNCIÓN: Crear artículo con imagen por defecto
+  // ⭐⭐ CORREGIDO: Método mejorado para obtener contenido
+  String _getContent(Map<String, dynamic> data) {
+    // Prioridad 1: 'content' (sin espacio)
+    if (data.containsKey('content') && 
+        data['content'] != null && 
+        data['content'].toString().trim().isNotEmpty) {
+      return data['content'].toString().trim();
+    }
+    
+    // Prioridad 2: ' content' (con espacio)
+    if (data.containsKey(' content') && 
+        data[' content'] != null && 
+        data[' content'].toString().trim().isNotEmpty) {
+      return data[' content'].toString().trim();
+    }
+    
+    // Prioridad 3: Buscar cualquier campo con texto largo
+    for (var entry in data.entries) {
+      if (entry.value is String && (entry.value as String).length > 100) {
+        return entry.value as String;
+      }
+    }
+    
+    return '';
+  }
+
   Future<ArticleEntity> _createFallbackArticle(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final title = data['title']?.toString()?.trim() ?? 'Sin título';
     
-    print('\n🔄 Creando artículo de respaldo: "$title"');
+    print('🔄 Creando artículo de respaldo: "$title"');
     
-    // Obtener NOMBRE DEL AUTOR
     String authorName = 'Anónimo';
     final authorId = data['authorId']?.toString();
     
     if (authorId != null && authorId.isNotEmpty) {
       try {
-        print('   🔍 Buscando autor ID: $authorId');
         final userDoc = await firestore
             .collection('users')
             .doc(authorId)
@@ -142,60 +202,70 @@ class ArticleRepositoryImpl implements ArticleRepository {
         if (userDoc.exists) {
           final userData = userDoc.data() as Map<String, dynamic>;
           authorName = userData['name']?.toString()?.trim() ?? 'Anónimo';
-          print('   ✅ Autor encontrado: $authorName');
         }
       } catch (e) {
-        print('   ❌ Error obteniendo autor: $e');
+        print('   ⚠️ Error obteniendo autor: $e');
       }
     }
+    
+    final content = _getContent(data);
     
     return ArticleEntity(
       id: doc.id.hashCode,
       author: authorName,
       title: title,
-      description: data['excerpt']?.toString()?.trim() ?? '',
+      description: content.isNotEmpty 
+          ? content.substring(0, min(150, content.length)) + (content.length > 150 ? '...' : '')
+          : '',
       url: '',
       urlToImage: _getFallbackImage(title),
       publishedAt: _getPublishedAt(data),
-      content: data['content']?.toString()?.trim() ?? '',
+      content: content,
     );
   }
 
   @override
   Future<void> saveArticle(ArticleEntity article) async {
     try {
-      print('💾 Guardando artículo en Firestore: "${article.title}"');
+      print('💾 GUARDANDO artículo: "${article.title}"');
       
-      // 1. Datos en EXACTA estructura de article1 (con null-safety)
+      // ⭐⭐ SOLO guardar 'content' (campo único y limpio)
       final articleData = {
         'title': article.title ?? 'Sin título',
-        'content': article.content ?? '',
-        'excerpt': (article.description?.isNotEmpty ?? false)
-            ? article.description!
-            : _generateExcerpt(article.content ?? ''),
+        'content': article.content?.trim() ?? '',  // ⭐ CAMPO ÚNICO
+        'excerpt': article.content?.isNotEmpty ?? false
+            ? (article.content!.length > 150 
+                ? article.content!.substring(0, 150) + '...'
+                : article.content!)
+            : '',
         'thumbnailURL': (article.urlToImage?.isNotEmpty ?? false)
             ? article.urlToImage!
             : _getFallbackImage(article.title ?? ''),
-        'authorId': 'utJbxTZ7ezTot9wVOTAh', // ← Mismo ID que article1
+        'authorId': 'utJbxTZ7ezTot9wVOTAh',
         'published': true,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       
       print('📝 Datos a guardar:');
-      articleData.forEach((key, value) {
-        print('   $key: $value');
-      });
+      print('   • Título: ${articleData['title']}');
       
-      // 2. Guardar con .add() (como article1, article2, article3)
+      // ⭐⭐ CORRECCIÓN: Convertir a String antes de usar substring
+      final contentForLog = articleData['content']?.toString() ?? '';
+      if (contentForLog.isNotEmpty) {
+        final preview = contentForLog.length > 50 
+            ? '${contentForLog.substring(0, 50)}...' 
+            : contentForLog;
+        print('   • Contenido: $preview');
+      }
+      
+      // ⭐⭐ USAR add() para crear nuevo documento
       final docRef = await firestore
           .collection('articles')
           .add(articleData);
       
-      print('✅ Artículo guardado con ID: ${docRef.id}');
-      print('📍 Ruta: articles/${docRef.id}');
+      print('✅ Artículo creado con ID: ${docRef.id}');
       
-      // 3. También guardar el autor en colección users si no existe
       await _ensureAuthorExists('utJbxTZ7ezTot9wVOTAh', article.author ?? 'Anónimo');
       
     } catch (e) {
@@ -204,12 +274,13 @@ class ArticleRepositoryImpl implements ArticleRepository {
     }
   }
 
+  // ⭐⭐ CORREGIDO: Método updateArticle usando set() con merge
   @override
   Future<void> updateArticle(ArticleEntity article) async {
     try {
-      print('✏️ [REPOSITORY] Actualizando artículo: "${article.title}"');
+      print('✏️ ACTUALIZANDO artículo: "${article.title}"');
       
-      // Buscar por título (simplificado)
+      // Buscar documento por título (o por ID si lo tienes)
       final querySnapshot = await firestore
           .collection('articles')
           .where('title', isEqualTo: article.title)
@@ -217,37 +288,55 @@ class ArticleRepositoryImpl implements ArticleRepository {
           .get();
       
       if (querySnapshot.docs.isEmpty) {
-        print('⚠️ [REPOSITORY] Artículo no encontrado. Creando nuevo...');
+        print('⚠️ Artículo no encontrado. Creando nuevo...');
         await saveArticle(article);
         return;
       }
       
       final docId = querySnapshot.docs.first.id;
       
-      // MISMA estructura que saveArticle
+      // ⭐⭐ SOLUCIÓN CLAVE: Usar set() con merge: true
       final articleData = {
         'title': article.title ?? 'Sin título',
-        'content': article.content ?? '',
-        'excerpt': (article.description?.isNotEmpty ?? false)
-            ? article.description!
-            : _generateExcerpt(article.content ?? ''),
+        'content': article.content?.trim() ?? '',  // Este campo SOBREESCRIBIRÁ cualquier duplicado
+        'excerpt': article.content?.isNotEmpty ?? false
+            ? (article.content!.length > 150 
+                ? article.content!.substring(0, 150) + '...'
+                : article.content!)
+            : '',
         'thumbnailURL': (article.urlToImage?.isNotEmpty ?? false)
             ? article.urlToImage!
             : _getFallbackImage(article.title ?? ''),
-        'authorId': 'utJbxTZ7ezTot9wVOTAh', // MISMO ID que saveArticle
+        'authorId': 'utJbxTZ7ezTot9wVOTAh',
         'published': true,
         'updatedAt': FieldValue.serverTimestamp(),
       };
       
+      print('📝 Datos de actualización:');
+      print('   • Usando set() con merge: true');
+      print('   • Esto SOBREESCRIBIRÁ "content" sin crear duplicados');
+      
+      // ⭐⭐ LÍNEA CRÍTICA CORREGIDA
       await firestore
           .collection('articles')
           .doc(docId)
-          .update(articleData);
+          .set(articleData, SetOptions(merge: true));  // ⭐ merge: true es esencial
       
-      print('✅ [REPOSITORY] Artículo actualizado: $docId');
+      print('✅ Artículo actualizado correctamente: $docId');
+      
+      // ⭐⭐ OPCIONAL: Limpiar cualquier campo ' content' residual
+      try {
+        await firestore
+            .collection('articles')
+            .doc(docId)
+            .update({' content': FieldValue.delete()});
+        print('   🧹 Campo " content" eliminado (si existía)');
+      } catch (e) {
+        // No es crítico si falla
+      }
       
     } catch (e) {
-      print('❌ [REPOSITORY] ERROR updateArticle: $e');
+      print('❌ ERROR en updateArticle: $e');
       rethrow;
     }
   }
@@ -262,79 +351,43 @@ class ArticleRepositoryImpl implements ArticleRepository {
           'name': authorName,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        print('👤 Autor creado en users: $authorName');
-      } else {
-        print('👤 Autor ya existe: $authorName');
+        print('👤 Autor creado: $authorName');
       }
     } catch (e) {
-      print('⚠️ Error creando autor: $e');
+      print('⚠️ Error con autor: $e');
     }
   }
 
-  // ⭐⭐ FUNCIÓN COMPLETAMENTE CORREGIDA
   Future<ArticleEntity> _createArticleWithAuthor(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final title = data['title']?.toString()?.trim() ?? 'Sin título';
     
     print('\n📰 Procesando: "$title" (ID: ${doc.id})');
     
-    // ⭐⭐ CORRECCIÓN CRÍTICA: Manejo correcto del thumbnailURL
+    // Procesar imagen
+    String imageUrl = _getFallbackImage(title);
     final rawThumbnail = data['thumbnailURL'];
-    String imageUrl = '';
     
-    // DEBUG DETALLADO
-    print('   🔍 Valor CRUDO thumbnailURL: "$rawThumbnail" (Tipo: ${rawThumbnail?.runtimeType})');
-    
-    if (rawThumbnail != null && rawThumbnail is String) {
+    if (rawThumbnail != null && rawThumbnail is String && rawThumbnail.trim().isNotEmpty) {
       final gsUrl = rawThumbnail.trim();
-      print('   🔍 Valor RECORTADO: "$gsUrl" (Longitud: ${gsUrl.length})');
       
-      // ⭐⭐ CORRECCIÓN: Verificar si NO es "Vacío" o vacío real
-      final isVacio = gsUrl.toLowerCase() == 'vacío' || 
-                      gsUrl.toLowerCase() == 'vacio' ||
-                      gsUrl == 'Vacío' ||
-                      gsUrl.isEmpty;
-      
-      if (!isVacio && gsUrl.isNotEmpty) {
-        if (gsUrl.startsWith('gs://')) {
-          try {
-            print('   🔗 Procesando Firebase Storage URL...');
-            imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
-            print('   ✅ URL Firebase obtenida');
-          } catch (e) {
-            print('   ⚠️ Error con Firebase Storage: $e');
-            print('   🔄 Usando fallback...');
-            imageUrl = _getFallbackImage(title);
-          }
-        } else if (gsUrl.startsWith('http')) {
-          print('   🌐 Usando URL normal...');
-          imageUrl = gsUrl;
-        } else {
-          print('   ⚠️ Formato desconocido: "$gsUrl"');
-          print('   🔄 Usando fallback...');
-          imageUrl = _getFallbackImage(title);
+      if (gsUrl.startsWith('gs://')) {
+        try {
+          imageUrl = await _getRealImageUrlFromGsUrl(gsUrl);
+        } catch (e) {
+          print('   ⚠️ Error con Firebase Storage: $e');
         }
-      } else {
-        print('   ⚠️ Valor es "Vacío", vacío o inválido');
-        print('   🔄 Usando imagen por defecto');
-        imageUrl = _getFallbackImage(title);
+      } else if (gsUrl.startsWith('http')) {
+        imageUrl = gsUrl;
       }
-    } else {
-      print('   ⚠️ thumbnailURL es null o no es String');
-      print('   🔄 Usando imagen por defecto');
-      imageUrl = _getFallbackImage(title);
     }
     
-    // DEBUG EXTRA: Mostrar URL completa
-    print('   📸 URL final imagen: ${imageUrl.substring(0, min(80, imageUrl.length))}...');
-    
-    // 2. Obtener NOMBRE DEL AUTOR
+    // Obtener autor
     String authorName = 'Anónimo';
     final authorId = data['authorId']?.toString();
     
     if (authorId != null && authorId.isNotEmpty) {
       try {
-        print('   🔍 Buscando autor ID: $authorId');
         final userDoc = await firestore
             .collection('users')
             .doc(authorId)
@@ -343,64 +396,39 @@ class ArticleRepositoryImpl implements ArticleRepository {
         if (userDoc.exists) {
           final userData = userDoc.data() as Map<String, dynamic>;
           authorName = userData['name']?.toString()?.trim() ?? 'Anónimo';
-          print('   ✅ Autor encontrado: $authorName');
-        } else {
-          print('   ⚠️ Autor no encontrado en Firestore');
         }
       } catch (e) {
-        print('   ❌ Error obteniendo autor: $e');
+        print('   ⚠️ Error obteniendo autor: $e');
       }
-    } else {
-      print('   ℹ️ No hay authorId en el artículo');
     }
     
-    print('   👤 Autor final: $authorName');
-    print('   🖼️ Imagen: ${imageUrl.substring(0, min(60, imageUrl.length))}...');
-    
-    // ⭐ RESUMEN FINAL PARA DEBUG
-    print('   📊 RESUMEN FINAL artículo "$title":');
-    print('   • Imagen URL: $imageUrl');
-    print('   • Longitud: ${imageUrl.length} caracteres');
-    print('   • Comienza con https?: ${imageUrl.startsWith('https://')}');
-    print('   • Es picsum.photos?: ${imageUrl.contains('picsum.photos')}');
-    print('   ---');
+    // Obtener contenido
+    final content = _getContent(data);
     
     return ArticleEntity(
       id: doc.id.hashCode,
       author: authorName,
       title: title,
-      description: data['excerpt']?.toString()?.trim() ?? '',
+      description: content.isNotEmpty 
+          ? content.substring(0, min(150, content.length)) + (content.length > 150 ? '...' : '')
+          : '',
       url: '',
       urlToImage: imageUrl,
       publishedAt: _getPublishedAt(data),
-      content: data['content']?.toString()?.trim() ?? '',
+      content: content,
     );
   }
 
-  // ⭐ FUNCIÓN CORREGIDA: Mejor manejo de errores
   Future<String> _getRealImageUrlFromGsUrl(String gsUrl) async {
     try {
-      // Verificar que sea una URL válida de Firebase Storage
-      if (!gsUrl.startsWith('gs://')) {
-        throw Exception('URL no es de Firebase Storage: $gsUrl');
-      }
-      
       final storageRef = storage.refFromURL(gsUrl);
-      final downloadUrl = await storageRef.getDownloadURL();
-      
-      return downloadUrl;
+      return await storageRef.getDownloadURL();
     } catch (e) {
-      print('   ❌ Error Firebase Storage: $e');
+      print('❌ Error Firebase Storage: $e');
       rethrow;
     }
   }
 
-  String _generateExcerpt(String content, {int length = 150}) {
-    if (content.length <= length) return content;
-    return '${content.substring(0, length)}...';
-  }
-
-  // ⭐⭐ FUNCIÓN MEJORADA: URLs con timestamp único
   String _getFallbackImage(String title) {
     final lowerTitle = title.toLowerCase();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
